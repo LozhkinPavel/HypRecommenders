@@ -178,7 +178,7 @@ def train(
             temperature,
             show_progress,
         )
-        if (eval_every_epoch and epoch % 10 == 9) or epoch == epochs - 1:
+        if eval_every_epoch or epoch == epochs - 1:
             eval_metrics = eval_epoch(
                 model, criterion, val_loader, device, temperature, ks, show_progress
             )
