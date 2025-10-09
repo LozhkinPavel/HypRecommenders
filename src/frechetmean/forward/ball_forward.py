@@ -33,7 +33,7 @@ def frechet_ball_forward(X, w, K=-1.0, max_iter=200, rtol=1e-6, atol=1e-6, verbo
 
         alphas = l_prime(-K * xmu_ss / ((1 + K * x_ss) * (1 + K * mu_ss.unsqueeze(-1)))) / (1 + K * x_ss)
 
-        alphas = alphas * w
+        alphas = (alphas * w).detach()
 
         c = (alphas * x_ss).sum(dim=-1)
         b = (alphas.unsqueeze(-1) * X).sum(dim=-2)
