@@ -284,7 +284,7 @@ class PoincareEmbedding(nn.Module):
             matrix = self.matrix
             if isinstance(self.manifold, geoopt.Lorentz):
                 matrix = lorentz_to_poincare(matrix, self.manifold.k, dim=-1)
-            mean = frechet_mean(matrix[None].cpu(), Poincare(K=-torch.abs(self.manifold.k.cpu())), w=x.cpu()).to(matrix.device, matrix.dtype)
+            mean = frechet_mean(matrix[None], Poincare(K=-torch.abs(self.manifold.k)), w=x).to(matrix.device, matrix.dtype)
             mapped_mean = PoincareBall(torch.abs(self.manifold.k)).logmap0(mean)
             output = manifold.expmap0(mapped_mean)
             assert torch.all(~torch.isnan(output))
