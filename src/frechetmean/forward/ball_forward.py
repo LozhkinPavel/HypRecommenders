@@ -21,9 +21,9 @@ def frechet_ball_forward(X, w, K=-1.0, max_iter=200, rtol=1e-6, atol=1e-6, verbo
     -------
         frechet mean (tensor): shape [..., dim]
     """
-    mu = X[..., 0, :].clone()
+    mu = X[..., 0, :].clone().detach()
 
-    x_ss = X.pow(2).sum(dim=-1)
+    x_ss = X.pow(2).sum(dim=-1).detach()
 
     mu_prev = mu
     iters = 0
