@@ -30,7 +30,7 @@ class BagOfItemsDataset(Dataset):
     def __getitem__(self, index):
         inds = torch.tensor(self.interactions_df.iloc[index]['item_id'])
         assert torch.unique(inds).shape[0] == inds.shape[0]
-        return torch.zeros(self.num_items, dtype=torch.float64).index_add(0, inds, torch.ones(inds.shape[0], dtype=torch.float64))
+        return torch.zeros(self.num_items, dtype=torch.float32).index_add(0, inds, torch.ones(inds.shape[0], dtype=torch.float32))
     
     def __len__(self):
         return self.interactions_df.shape[0]
@@ -100,7 +100,7 @@ class EvalSequentialDataset(Dataset):
         val_items = torch.tensor(self.interactions_df.iloc[user_id]['val_item_id'][:val_ind], dtype=torch.int64)
         inds = torch.cat((train_items, val_items))
         pos_item = self.interactions_df.iloc[user_id]['val_item_id'][val_ind]
-        return torch.zeros(self.num_items, dtype=torch.float64).index_add(0, inds, torch.ones(inds.shape[0], dtype=torch.float64)), pos_item, user_id
+        return torch.zeros(self.num_items, dtype=torch.float32).index_add(0, inds, torch.ones(inds.shape[0], dtype=torch.float32)), pos_item, user_id
     
     def __len__(self):
         return self.lens_cumsum[-1]

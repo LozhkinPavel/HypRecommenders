@@ -187,7 +187,8 @@ def train(
             if show_progress:
                 print(f"Epoch {epoch}: {eval_metrics}")
             # print([manifold.c.item() for manifold in model.manifolds])
-            print(model[-1].manifold.c.item())
+            # print(model[-1].manifold.c.item())
+            print(model[-1].manifold.k.item())
             if log:
                 cur_lr = (
                     scheduler.get_last_lr()[0]

@@ -1,7 +1,7 @@
 import argparse
 import wandb
 from torch import nn
-from geoopt import PoincareBall
+from geoopt import PoincareBall, SphereProjection
 from geoopt.optim import RiemannianAdam
 from src.models import ExpMap0, LogMap0, UnidirectionalPoincareMLR, AutoEncoder, PoincareEmbedding
 from src.utils import fix_seed
@@ -48,16 +48,16 @@ def main(
 
     dtype = getattr(torch, dtype)
 
-    ball = PoincareBall(c=1, learnable=False)
+    ball = SphereProjection(k=0.5, learnable=True)
 
-    # encoder = str2layer[model_encoder](
-    #     in_features=num_items,
-    #     out_features=emb_dim,
-    #     dtype=dtype,
-    #     **{"manifold": ball} if model_encoder != "Euc" else {},
-    # )
+    encoder = str2layer[model_encoder](
+        in_features=num_items,
+        out_features=emb_dim,
+        dtype=dtype,
+        **{"manifold": ball} if model_encoder != "Euc" else {},
+    )
 
-    encoder = PoincareEmbedding(num_items, emb_dim, ball, dtype=dtype).to(device)
+    # encoder = PoincareEmbedding(num_items, emb_dim, ball, dtype=dtype).to(device)
 
     decoder = str2layer[model_decoder](
         in_features=emb_dim,
@@ -67,8 +67,8 @@ def main(
     )
     
     layers = [encoder, decoder]
-    # if not isinstance(encoder, nn.Linear):
-    #     layers = [ExpMap0(encoder.manifold)] + layers
+    if not isinstance(encoder, nn.Linear):
+        layers = [ExpMap0(encoder.manifold)] + layers
 
     model = nn.Sequential(*layers).to(device)
     # model = AutoEncoder(num_items, 2, emb_dim, dtype=dtype).to(device)
