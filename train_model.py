@@ -8,7 +8,7 @@ from src.utils import fix_seed
 from src.dataset import get_loaders, get_data
 from src.train import train
 import torch
-from torch.optim.lr_scheduler import LinearLR, SequentialLR
+from torch.optim.lr_scheduler import LinearLR, SequentialLR, ConstantLR
 from src.common import str2layer
 
 
@@ -78,15 +78,17 @@ def main(
     optimizer = RiemannianAdam(model.parameters(), lr, weight_decay=1e-3)
     criterion = nn.CrossEntropyLoss(reduction='mean').to(device)
 
-    scheduler1 = LinearLR(
-        optimizer, start_factor=0.1, end_factor=1.0, total_iters=epochs // 10
-    )
-    scheduler2 = LinearLR(
-        optimizer, start_factor=1.0, end_factor=0.1, total_iters=epochs - epochs // 10
-    )
-    scheduler = SequentialLR(
-        optimizer, schedulers=[scheduler1, scheduler2], milestones=[epochs // 10]
-    )
+    # scheduler1 = LinearLR(
+    #     optimizer, start_factor=0.1, end_factor=1.0, total_iters=epochs // 10
+    # )
+    # scheduler2 = LinearLR(
+    #     optimizer, start_factor=1.0, end_factor=0.1, total_iters=epochs - epochs // 10
+    # )
+    # scheduler = SequentialLR(
+    #     optimizer, schedulers=[scheduler1, scheduler2], milestones=[epochs // 10]
+    # )
+
+    scheduler = ConstantLR(optimizer, factor=1.0, total_iters=epochs)
 
     print('Starting train')
 
