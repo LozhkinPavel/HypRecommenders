@@ -50,7 +50,7 @@ def main(
 
     dtype = getattr(torch, dtype)
 
-    ball = SphereProjection(k=0.5, learnable=True)
+    ball = PoincareBall(c=1.0, learnable=True)
 
     encoder = str2layer[model_encoder](
         in_features=num_items,
@@ -68,9 +68,16 @@ def main(
         **{"manifold": ball} if model_decoder != "Euc" else {},
     )
     
-    layers = [encoder, decoder]
+    if isinstance(encoder, nn.Linear):
+        act = [nn.ReLU()]
+    else:
+        act = [LogMap0(encoder.manifold), nn.ReLU(), ExpMap0(encoder.manifold)]
+    
+    layers = [encoder, *act, decoder]
     if not isinstance(encoder, nn.Linear):
         layers = [ExpMap0(encoder.manifold)] + layers
+        if not isinstance(decoder, UnidirectionalPoincareMLR):
+            layers = layers + [LogMap0(encoder.manifold)]
 
     model = nn.Sequential(*layers).to(device)
     # model = AutoEncoder(num_items, 2, emb_dim, dtype=dtype).to(device)
