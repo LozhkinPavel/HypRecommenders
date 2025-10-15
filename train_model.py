@@ -16,6 +16,7 @@ def main(
     emb_dim: int,
     lr: float,
     batch_size: int,
+    c: float,
     epochs: int,
     model_encoder: str,
     model_decoder: str,
@@ -50,7 +51,7 @@ def main(
 
     dtype = getattr(torch, dtype)
 
-    ball = PoincareBall(c=1.0, learnable=True)
+    ball = PoincareBall(c=c, learnable=True)
 
     encoder = str2layer[model_encoder](
         in_features=num_items,
@@ -127,6 +128,7 @@ if __name__ == '__main__':
     parser.add_argument("--emb_dim", type=int, required=True)
     parser.add_argument("--lr", type=float, required=True)
     parser.add_argument("--batch_size", type=int, required=True)
+    parser.add_argument("--c", type=float, default=1.0)
 
     parser.add_argument("--data_name", type=str, required=True)
     parser.add_argument("--data_dir", type=str, default="./data/")
