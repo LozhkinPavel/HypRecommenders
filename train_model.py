@@ -107,6 +107,8 @@ def main(
     print(f'Final results: {max(history, key=lambda x: x["hr@20"])}')
     print(f'Final curvature: {model[-1].manifold.c.item()}')
 
+    torch.save(model.state_dict(), 'model.pt')
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
