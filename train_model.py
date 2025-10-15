@@ -31,6 +31,7 @@ def main(
     show_progress: bool,
     log: bool,
     conf: dict,
+    run_name: str
 ):
     assert (model_encoder == 'Euc') == (model_decoder == 'Euc'), 'Can not mix euclidian and hyperbolic layers'
     fix_seed(seed)
@@ -38,7 +39,8 @@ def main(
     if log:
         run = wandb.init( # noqa
             project="HypRecSys",
-            config=conf
+            config=conf,
+            name=run_name
         )
     print('Prepare data')
     _, train_val_loader, val_loader, test_loader = get_loaders(*get_data(data_dir, data_name, dataset_type), batch_size, num_workers)
@@ -149,6 +151,7 @@ if __name__ == '__main__':
 
     parser.add_argument("--show_progress", default=False, action="store_true")
     parser.add_argument("--log", default=False, action="store_true")
+    parser.add_argument("--run_name", default=str)
 
     conf = vars(parser.parse_args())
 
