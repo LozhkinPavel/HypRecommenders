@@ -186,13 +186,13 @@ class ManifoldTruePairwiseLTR(nn.Module):
                 pos_item[:, None].expand(-1, num_items, -1),
                 neg_items
             ), 
-            dim=1
+            dim=2
         )
         input2 = torch.cat((
                 neg_items,
                 pos_item[:, None].expand(-1, num_items, -1),
             ), 
-            dim=1
+            dim=2
         )
         return torch.squeeze(self.head(input1) - self.head(input2), dim=-1)
     
