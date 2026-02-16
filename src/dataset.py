@@ -61,7 +61,7 @@ class UserItemWithNegativesDataset(Dataset):
         self.users_interactions_df = interactions_df.groupby(by='user_id').agg({'item_id': list})
         self.items_interactions_df = interactions_df.groupby(by='item_id').agg({'user_id': list})
         print(torch.tensor(interactions_df['user_id'].values, dtype=torch.int64))
-        self.interactions = torch.sparse_coo_tensor((torch.tensor(interactions_df['user_id'].values, dtype=torch.int64), torch.tensor(interactions_df['item_id'].values, dtype=torch.int64)), ones, (self.num_users, self.num_items))
+        self.interactions = torch.sparse_coo_tensor((torch.tensor(interactions_df['user_id'].values, dtype=torch.int32), torch.tensor(interactions_df['item_id'].values, dtype=torch.int32)), ones, (self.num_users, self.num_items))
         self.num_negatives = num_negatives
 
         if shuffle:
