@@ -74,7 +74,15 @@ class UserItemWithNegativesDataset(Dataset):
 
         probs = torch.ones_like(user_interactions) - user_interactions
         probs /= torch.mean(probs)
-        neg_item_id = torch.multinomial(probs, num_samples=self.num_negatives)
+        neg_item_id = torch.zeros((self.num_negatives, ), dtype=torch.int64)
+        for i in range(self.num_negatives):
+            v = -1
+            while v == -1 or user_interactions[v] == 1:
+                v = torch.randint(self.num_items)
+            user_interactions[v] = 1
+            neg_item_id[i] = v
+        user_interactions[neg_item_id] -= 1
+        # neg_item_id = torch.multinomial(probs, num_samples=self.num_negatives)
 
         # items_interactions = torch.zeros((self.num_negatives + 1, self.num_users), dtype=torch.float64)
         # user_inds = torch.tensor(self.items_interactions_df.loc[[pos_item_id, *neg_item_id.tolist()], 'user_id'], dtype=torch.int64)
