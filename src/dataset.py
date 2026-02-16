@@ -78,7 +78,7 @@ class UserItemWithNegativesDataset(Dataset):
         for i in range(self.num_negatives):
             v = -1
             while v == -1 or user_interactions[v] == 1:
-                v = torch.randint(self.num_items)
+                v = torch.randint(self.num_items, size=(1,))
             user_interactions[v] = 1
             neg_item_id[i] = v
         user_interactions[neg_item_id] -= 1
