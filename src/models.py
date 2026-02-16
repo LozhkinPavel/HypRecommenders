@@ -67,6 +67,26 @@ class BPRWrapper(BayesianPersonalizedRanking):
         permuted_scores = torch.zeros_like(scores)
         permuted_scores[torch.repeat_interleave(torch.arange(item_ids.shape[0])[None], item_ids.shape[1], dim=0).T, item_ids] = scores
         return permuted_scores
+    
+    def inference(self, batch, items, user_id):
+        output = torch.zeros_like(items)
+        for i in range(user_id.shape[0]):
+            item_ids, scores = self.recommend(
+                user_id[i], 
+                None, 
+                N=items.shape[1], 
+                filter_already_liked_items=False,
+                items=items[i]
+                # recalculate_user=True
+            )
+
+            indices_1 = torch.argsort(torch.tensor(item_ids[0]))
+            indices_2 = torch.argsort(items[i])
+
+            permutation = indices_1[torch.argsort(indices_2)]
+            output[i] = torch.tensor(scores[0, permutation])
+
+        return output
 
     def eval(self):
         pass

@@ -179,7 +179,7 @@ class EvalSequentialWithNegativesDataset(EvalSequentialDataset):
 
         return (
             torch.zeros(self.num_items, dtype=torch.float64).index_add(0, inds, torch.ones(inds.shape[0], dtype=torch.float64)),
-        ), (torch.cat(torch.tensor([pos_item]), negatives), user_id)
+        ), (torch.cat((torch.tensor([pos_item]), negatives)), user_id)
     
 
 class EvalSequentialUserItemWithNegativesDataset(EvalSequentialDataset):
@@ -415,8 +415,12 @@ def get_data(data_dir: str, data_name: str, dataset_type: str, num_negatives: tu
             val_dataset = EvalSequentialDataset(val_data, item_data, val_separator, seed=seed)
             test_dataset = EvalSequentialDataset(copy(interactions_data), item_data, test_separator, seed=seed)
         else:
-            val_dataset = EvalSequentialUserItemWithNegativesDataset(val_data, item_data, val_separator, num_negatives=num_negatives[1], seed=seed)
-            test_dataset = EvalSequentialUserItemWithNegativesDataset(copy(interactions_data), item_data, test_separator, num_negatives=num_negatives[1], seed=seed)
+            if dataset_type == "true_pairwise_ltr":
+                val_dataset = EvalSequentialUserItemWithNegativesDataset(val_data, item_data, val_separator, num_negatives=num_negatives[1], seed=seed)
+                test_dataset = EvalSequentialUserItemWithNegativesDataset(copy(interactions_data), item_data, test_separator, num_negatives=num_negatives[1], seed=seed)
+            else:
+                val_dataset = EvalSequentialWithNegativesDataset(val_data, item_data, val_separator, num_negatives=num_negatives[1], seed=seed)
+                test_dataset = EvalSequentialWithNegativesDataset(copy(interactions_data), item_data, test_separator, num_negatives=num_negatives[1], seed=seed)
 
         train_interactions = interactions_data[interactions_data['timestamp'] < val_separator]
         val_interactions = interactions_data[(interactions_data['timestamp'] < test_separator) & (interactions_data['timestamp'] >= val_separator)]
