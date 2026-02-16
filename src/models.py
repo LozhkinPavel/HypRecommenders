@@ -1,9 +1,10 @@
 import numpy as np
 from scipy.sparse.linalg import svds
-from scipy.sparse import coo_array
+from scipy.sparse import coo_array, csr_matrix
 from src.utils import arsinh
 from src.frechetmean import frechet_mean, Poincare, Lorentz
 from geoopt import PoincareBall
+from implicit.cpu.bpr import BayesianPersonalizedRanking
 
 import torch
 import geoopt
@@ -50,6 +51,25 @@ class Easer:
     def eval(self):
         pass
 
+class BPRWrapper(BayesianPersonalizedRanking):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def __call__(self, batch, user_id):
+        item_ids, scores = self.recommend(
+            user_id.numpy(), 
+            csr_matrix(batch.numpy()), 
+            N=batch.shape[1], 
+            filter_already_liked_items=False,
+            # recalculate_user=True
+        )
+        item_ids, scores = torch.tensor(item_ids), torch.tensor(scores)
+        permuted_scores = torch.zeros_like(scores)
+        permuted_scores[torch.repeat_interleave(torch.arange(item_ids.shape[0])[None], item_ids.shape[1], dim=0).T, item_ids] = scores
+        return permuted_scores
+
+    def eval(self):
+        pass
 
 class PopularityModel:
     def fit(self, dataloader):
@@ -69,6 +89,53 @@ class PopularityModel:
     def eval(self):
         pass
 
+
+class TruePairwiseLTR(nn.Module):
+    def __init__(self, emb_dim, num_users, num_items, num_layers=0, dtype=torch.float32):
+        super().__init__()
+        self.model = nn.Sequential(
+            nn.Linear(num_users * 2 + num_items, emb_dim, dtype=dtype),
+            *[
+                nn.Linear(emb_dim, emb_dim, dtype=dtype)
+                for _ in range(num_layers)
+            ],
+            nn.Linear(emb_dim, 1, dtype=dtype)
+        )
+    
+    def forward(self, batch):
+        users_interactions, items_interactions = batch
+        pos_item = items_interactions[:, 0:1]
+        neg_items = items_interactions[:, 1:]
+        num_items = neg_items.shape[1]
+        input1 = torch.cat((
+                users_interactions[:, None].expand(-1, num_items, -1), 
+                pos_item.expand(-1, num_items, -1),
+                neg_items
+            ), 
+            dim=2
+        )
+        input2 = torch.cat((
+                users_interactions[:, None].expand(-1, num_items, -1), 
+                neg_items,
+                pos_item.expand(-1, num_items, -1),
+            ), 
+            dim=2
+        )
+        return torch.squeeze(self.model(input1) - self.model(input2), -1)
+    
+    def inference(self, batch, items, user_id):
+        users_interactions, items_interactions = batch
+        num_items = items_interactions.shape[1]
+        input = torch.cat((
+                users_interactions[:, None, None].expand(-1, num_items, num_items, -1), 
+                items_interactions[:, :, None].expand(-1, -1, num_items, -1), 
+                items_interactions[:, None].expand(-1, num_items, -1, -1)
+            ),
+            dim=3
+        )
+        output = torch.squeeze(self.model(input), -1)
+        logits = output - torch.transpose(output, 1, 2)
+        return torch.sum(1 / torch.exp(-logits), dim=2)
 
 class MobiusLinear(nn.Module):
     def __init__(

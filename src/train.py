@@ -7,10 +7,11 @@ import matplotlib.pyplot as plt
 from torch.optim.lr_scheduler import LRScheduler
 from torch.optim import Optimizer
 from src.utils import grad_norm, hr, ndcg
-from src.models import PoincareEmbedding
+from src.models import PoincareEmbedding, BPRWrapper
 from src.dataset import SimilarityDataset
 from geoopt.manifolds.lorentz.math import lorentz_to_poincare
 from geoopt import Lorentz
+from src.common import tuple_to_device
 
 
 def train_epoch(
@@ -18,7 +19,6 @@ def train_epoch(
     optimizer: Optimizer,
     criterion: nn.Module,
     data_loader: DataLoader,
-    dataset_type: str,
     num_epoch: int,
     device: str,
     temperature: float = 1.0,
@@ -30,42 +30,25 @@ def train_epoch(
     dataset = data_loader.dataset
 
     dataset_sz = len(data_loader.dataset)
+    bs = data_loader.batch_size
+
     if show_progress:
         data_loader = tqdm(data_loader, desc=f"Training epoch {num_epoch}")
 
 
-    if dataset_type == "sequential":
-        for batch, target in data_loader:
-            assert torch.all(batch <= 1)
-            optimizer.zero_grad()
-            batch, target = batch.to(device), target.to(device)
+    for batch, target in data_loader:
+        batch, target = tuple_to_device(batch, device), tuple_to_device(target, device)
 
-            preds = model(batch)
-            logits = preds * temperature
-            loss = criterion(logits, target)
+        optimizer.zero_grad()
+        preds = model(batch)
+        
+        logits = preds * temperature
+        loss = criterion(logits, batch, target)
 
-            loss.backward()
-            optimizer.step()
+        loss.backward()
+        optimizer.step()
 
-            epoch_loss += loss.item() * batch.shape[0]
-
-    else:
-        for batch in data_loader:
-            assert torch.all(batch <= 1)
-            batch = batch.to(device)
-
-            optimizer.zero_grad()
-            if isinstance(model[0], PoincareEmbedding):
-                preds = model((batch, model[-1].manifold))
-            else:
-                preds = model(batch)
-            logits = preds * temperature
-            loss = criterion(logits, batch)
-
-            loss.backward()
-            optimizer.step()
-
-            epoch_loss += loss.item() * batch.shape[0]
+        epoch_loss += loss.item() * batch[0].shape[0]
 
     epoch_loss /= dataset_sz
 
@@ -73,6 +56,77 @@ def train_epoch(
 
 
 def eval_epoch(
+    model: nn.Module,
+    criterion: nn.Module,
+    data_loader: DataLoader,
+    device: str,
+    temperature: float = 1.0,
+    ks: list[int] = [20],
+    show_progress: bool = False,
+):
+    model.eval()
+    eval_loss = 0.0
+
+    dataset_sz = len(data_loader.dataset)
+    dataset = data_loader.dataset
+    users_freqs = torch.zeros((data_loader.dataset.num_users, ), device=device)
+    hr_sum = torch.zeros((len(ks), data_loader.dataset.num_users), device=device)
+    ndcg_sum = torch.zeros((len(ks), data_loader.dataset.num_users), device=device)
+    items_freqs = torch.zeros(
+        (len(ks), data_loader.dataset.num_items), device=device, dtype=torch.bool
+    )
+
+    if show_progress:
+        data_loader = tqdm(data_loader, desc="Eval")
+
+    for batch, (pos_item, user_id) in data_loader:
+        assert torch.all(batch <= 1)
+        batch, pos_item, user_id = (
+            batch.to(device),
+            pos_item.to(device),
+            user_id.to(device),
+        )
+        with torch.no_grad():
+            preds = model(batch)
+        assert torch.all(~torch.isnan(preds))
+        logits = preds * temperature
+        # loss = criterion(logits, pos_item)
+
+        logits[batch == 1] = -torch.inf
+        _, topk_inds = torch.topk(logits, k=max(ks), dim=1, sorted=True)
+
+        users_freqs.index_add_(0, user_id, torch.ones((batch.shape[0]), device=device))
+
+        for i, k in enumerate(ks):
+            hr_sum[i].index_add_(0, user_id, hr(topk_inds, k, pos_item))
+            ndcg_sum[i].index_add_(0, user_id, ndcg(topk_inds, k, pos_item))
+
+            items_freqs[i, topk_inds[:, :k]] = True
+
+        # eval_loss += loss.item() * batch.shape[0]
+
+    eval_users = torch.where(users_freqs > 0)[0]
+    epoch_hr = torch.mean(
+        hr_sum[:, eval_users] / users_freqs[None, eval_users], dim=1
+    ).cpu()
+    epoch_ndcg = torch.mean(
+        ndcg_sum[:, eval_users] / users_freqs[None, eval_users], dim=1
+    ).cpu()
+    epoch_cov = (torch.sum(items_freqs, dim=1) / items_freqs.shape[1]).cpu()
+
+    # eval_loss /= dataset_sz
+
+    # epoch_res = {"val_loss": eval_loss}
+    epoch_res = {}
+    for i, k in enumerate(ks):
+        epoch_res[f"hr@{k}"] = epoch_hr[i].item()
+        epoch_res[f"ndcg@{k}"] = epoch_ndcg[i].item()
+        epoch_res[f"cov@{k}"] = epoch_cov[i].item()
+
+    return epoch_res
+
+
+def eval_epoch_with_negatives(
     model: nn.Module,
     criterion: nn.Module,
     data_loader: DataLoader,
@@ -96,34 +150,26 @@ def eval_epoch(
     if show_progress:
         data_loader = tqdm(data_loader, desc="Eval")
 
-    for batch, pos_item, user_id in data_loader:
-        assert torch.all(batch <= 1)
-        batch, pos_item, user_id = (
-            batch.to(device),
-            pos_item.to(device),
+    for batch, (items, user_id) in data_loader:
+        batch, items, user_id = (
+            tuple_to_device(batch, device),
+            items.to(device),
             user_id.to(device),
         )
         with torch.no_grad():
-            if isinstance(model[0], PoincareEmbedding):
-                preds = model((batch, model[-1].manifold))
-            else:
-                preds = model(batch)
-        assert torch.all(~torch.isnan(preds))
-        logits = preds * temperature
-        loss = criterion(logits, pos_item)
+            preds = model.inference(batch, items, user_id)
 
-        logits[batch == 1] = -torch.inf
-        _, topk_inds = torch.topk(logits, k=max(ks), dim=1, sorted=True)
+        _, topk_inds = torch.topk(preds, k=max(ks), dim=1, sorted=True)
 
-        users_freqs.index_add_(0, user_id, torch.ones((batch.shape[0]), device=device))
+        users_freqs.index_add_(0, user_id, torch.ones((user_id.shape[0]), device=device))
 
         for i, k in enumerate(ks):
-            hr_sum[i].index_add_(0, user_id, hr(topk_inds, k, pos_item))
-            ndcg_sum[i].index_add_(0, user_id, ndcg(topk_inds, k, pos_item))
+            hr_sum[i].index_add_(0, user_id, hr(topk_inds, k, torch.tensor([0])))
+            ndcg_sum[i].index_add_(0, user_id, ndcg(topk_inds, k, torch.tensor([0])))
 
-            items_freqs[i, topk_inds[:, :k]] = True
+            items_freqs[i, items[torch.arange(topk_inds.shape[0])[:, None], topk_inds[:, :k]]] = True
 
-        eval_loss += loss.item() * batch.shape[0]
+        # eval_loss += loss.item() * batch.shape[0]
 
     eval_users = torch.where(users_freqs > 0)[0]
     epoch_hr = torch.mean(
@@ -134,9 +180,10 @@ def eval_epoch(
     ).cpu()
     epoch_cov = (torch.sum(items_freqs, dim=1) / items_freqs.shape[1]).cpu()
 
-    eval_loss /= dataset_sz
+    # eval_loss /= dataset_sz
 
-    epoch_res = {"val_loss": eval_loss}
+    # epoch_res = {"val_loss": eval_loss}
+    epoch_res = {}
     for i, k in enumerate(ks):
         epoch_res[f"hr@{k}"] = epoch_hr[i].item()
         epoch_res[f"ndcg@{k}"] = epoch_ndcg[i].item()
@@ -152,16 +199,17 @@ def train(
     scheduler: LRScheduler,
     train_loader: DataLoader,
     val_loader: DataLoader,
-    dataset_type: str,
     epochs: int,
     device: str,
     ks: list[int] = [20],
     temperature: float = 1.0,
+    eval_with_negatives: bool = False,
     show_progress: bool = False,
     log: bool = False,
     eval_every_epoch: bool = True,
 ):
-    eval_metrics = eval_epoch(
+    eval_fn = eval_epoch_with_negatives if eval_with_negatives else eval_epoch
+    eval_metrics = eval_fn(
         model, criterion, val_loader, device, temperature, ks, show_progress
     )
     print("Epoch -1: ", eval_metrics)
@@ -172,14 +220,13 @@ def train(
             optimizer,
             criterion,
             train_loader,
-            dataset_type,
             epoch,
             device,
             temperature,
             show_progress,
         )
         if eval_every_epoch or epoch == epochs - 1:
-            eval_metrics = eval_epoch(
+            eval_metrics = eval_fn(
                 model, criterion, val_loader, device, temperature, ks, show_progress
             )
             eval_metrics["train_loss"] = train_loss
@@ -188,7 +235,7 @@ def train(
                 print(f"Epoch {epoch}: {eval_metrics}")
             # print([manifold.c.item() for manifold in model.manifolds])
             # print(model[-1].manifold.c.item())
-            print(model[-1].manifold.k.item())
+            # print(model[-1].manifold.k.item())
             if log:
                 cur_lr = (
                     scheduler.get_last_lr()[0]

@@ -13,7 +13,7 @@ class BagOfItemsDataset(Dataset):
     def __init__(self, interactions_df: pd.DataFrame, item_df: pd.DataFrame, shuffle: bool = True, seed: int = 42):
         super().__init__()
         self.num_items = len(pd.unique(interactions_df['item_id']))
-        self.num_users = len(pd.unique(interactions_df['user_id']))
+        self.num_users = pd.unique(interactions_df['user_id']).max() + 1
 
         self.item_df = item_df
 
@@ -29,17 +29,68 @@ class BagOfItemsDataset(Dataset):
 
     def __getitem__(self, index):
         inds = torch.tensor(self.interactions_df.iloc[index]['item_id'])
-        assert torch.unique(inds).shape[0] == inds.shape[0]
         return torch.zeros(self.num_items, dtype=torch.float64).index_add(0, inds, torch.ones(inds.shape[0], dtype=torch.float64))
     
     def __len__(self):
         return self.interactions_df.shape[0]
+    
+class BagOfItemsWithNegativesDataset(BagOfItemsDataset):
+    def __init__(self, *args, num_negatives=1, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.num_negatives = num_negatives
+    
+    def __getitem__(self, index):
+        inds = torch.tensor(self.interactions_df.iloc[index]['item_id'])
+        interactions = torch.zeros(self.num_items, dtype=torch.float64).index_add(0, inds, torch.ones(inds.shape[0], dtype=torch.float64))
+        probs = torch.ones_like(interactions) - interactions
+        probs /= torch.mean(probs)
+        return interactions, torch.multinomial(probs, num_samples=self.num_negatives)
+    
+class UserItemWithNegativesDataset(Dataset):
+    def __init__(self, interactions_df: pd.DataFrame, item_df: pd.DataFrame, num_negatives: int = 1, shuffle: bool = True, seed: int = 42):
+        super().__init__()
+        self.num_items = len(pd.unique(interactions_df['item_id']))
+        self.num_users = pd.unique(interactions_df['user_id']).max() + 1
+
+        self.item_df = item_df
+        self.interactions_df = interactions_df
+
+        self.num_interactions = torch.zeros((self.num_items, ), dtype=torch.float64).index_add_(0, torch.tensor(interactions_df['item_id'].values), torch.ones(interactions_df.shape[0], dtype=torch.float64))
+
+        self.users_interactions_df = interactions_df.groupby(by='user_id').agg({'item_id': list})
+        self.items_interactions_df = interactions_df.groupby(by='item_id').agg({'user_id': list})
+        self.num_negatives = num_negatives
+
+        if shuffle:
+            self.interactions_df = self.interactions_df.sample(frac=1.0, random_state=seed)
+
+    def __getitem__(self, index):
+        pos_item_id, user_id = self.interactions_df.iloc[index]['item_id'], self.interactions_df.iloc[index]['user_id']
+        
+        item_inds = torch.tensor(self.users_interactions_df.loc[user_id, 'item_id'], dtype=torch.int64)
+        user_interactions = torch.zeros(self.num_items, dtype=torch.float64).index_add(0, item_inds, torch.ones(item_inds.shape[0], dtype=torch.float64))
+
+        probs = torch.ones_like(user_interactions) - user_interactions
+        probs /= torch.mean(probs)
+        neg_item_id = torch.multinomial(probs, num_samples=self.num_negatives)
+
+        items_interactions = torch.zeros((self.num_negatives + 1, self.num_users), dtype=torch.float64)
+
+        for i, item_id in enumerate([pos_item_id, *neg_item_id.tolist()]):
+            user_inds = torch.tensor(self.items_interactions_df.loc[item_id, 'user_id'], dtype=torch.int64)
+            items_interactions[i] = torch.zeros(self.num_users, dtype=torch.float64).index_add(0, user_inds, torch.ones(user_inds.shape[0], dtype=torch.float64))
+
+        return (user_interactions, items_interactions), ()
+
+    def __len__(self):
+        return self.interactions_df.shape[0]
+
 
 class SequentialDataset(Dataset):
     def __init__(self, interactions_df: pd.DataFrame, item_df: pd.DataFrame, shuffle: bool = True, seed: int = 42):
         super().__init__()
         self.num_items = len(pd.unique(interactions_df['item_id']))
-        self.num_users = len(pd.unique(interactions_df['user_id']))
+        self.num_users = pd.unique(interactions_df['user_id']).max() + 1
 
         self.item_df = item_df
 
@@ -69,25 +120,25 @@ class EvalSequentialDataset(Dataset):
     def __init__(self, interactions_df: pd.DataFrame, item_df: pd.DataFrame, separator_ts: int, shuffle: bool = True, seed: int = 42):
         super().__init__()
         self.num_items = len(pd.unique(interactions_df['item_id']))
-        self.num_users = len(pd.unique(interactions_df['user_id']))
+        self.num_users = pd.unique(interactions_df['user_id']).max() + 1
 
         self.num_interactions = torch.zeros((self.num_items, ), dtype=torch.float64).index_add_(0, torch.tensor(interactions_df['item_id'].values), torch.ones(interactions_df.shape[0], dtype=torch.float64))
 
         self.item_df = item_df
 
-        interactions_df['item_id'] = list(zip(interactions_df['item_id'], interactions_df['timestamp']))
+        interactions_df['item_id_ts'] = list(zip(interactions_df['item_id'], interactions_df['timestamp']))
         def sort_by_2nd_key(ser):
             return sorted(ser, key=lambda x: x[1])
 
-        self.interactions_df = interactions_df.groupby(by='user_id').agg({'item_id': sort_by_2nd_key})
+        self.interactions_df = interactions_df.groupby(by='user_id', as_index=False).agg({'item_id_ts': sort_by_2nd_key})
         if shuffle:
             self.interactions_df = self.interactions_df.sample(frac=1.0, random_state=seed)
         def get_train_items(ls):
             return list(map(lambda x: x[0], sorted(filter(lambda x: x[1] < separator_ts, ls), key=lambda x: x[1])))
         def get_val_items(ls):
             return list(map(lambda x: x[0], sorted(filter(lambda x: x[1] >= separator_ts, ls), key=lambda x: x[1])))
-        self.interactions_df['train_item_id'] = self.interactions_df['item_id'].apply(get_train_items)
-        self.interactions_df['val_item_id'] = self.interactions_df['item_id'].apply(get_val_items)
+        self.interactions_df['train_item_id'] = self.interactions_df['item_id_ts'].apply(get_train_items)
+        self.interactions_df['val_item_id'] = self.interactions_df['item_id_ts'].apply(get_val_items)
         self.interactions_df = self.interactions_df[self.interactions_df['val_item_id'].apply(len) > 0]
 
         self.lens = torch.tensor(self.interactions_df['val_item_id'].apply(len).to_list())
@@ -100,11 +151,67 @@ class EvalSequentialDataset(Dataset):
         val_items = torch.tensor(self.interactions_df.iloc[user_id]['val_item_id'][:val_ind], dtype=torch.int64)
         inds = torch.cat((train_items, val_items))
         pos_item = self.interactions_df.iloc[user_id]['val_item_id'][val_ind]
-        return torch.zeros(self.num_items, dtype=torch.float64).index_add(0, inds, torch.ones(inds.shape[0], dtype=torch.float64)), pos_item, user_id
+        return torch.zeros(self.num_items, dtype=torch.float64).index_add(0, inds, torch.ones(inds.shape[0], dtype=torch.float64)), pos_item, self.interactions_df.iloc[user_id]['user_id']
     
     def __len__(self):
         return self.lens_cumsum[-1]
     
+
+class EvalSequentialWithNegativesDataset(EvalSequentialDataset):
+    def __init__(self, *args, num_negatives=1, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.num_negatives = num_negatives
+
+    def __getitem__(self, index):
+        user_id = torch.searchsorted(self.lens_cumsum, index, right=True).item()
+        val_ind = self.lens[user_id] - (self.lens_cumsum[user_id] - index)
+        train_items = torch.tensor(self.interactions_df.iloc[user_id]['train_item_id'], dtype=torch.int64)
+        val_items = torch.tensor(self.interactions_df.iloc[user_id]['val_item_id'][:val_ind], dtype=torch.int64)
+        inds = torch.cat((train_items, val_items))
+        pos_item = self.interactions_df.iloc[user_id]['val_item_id'][val_ind]
+
+        all_positives = torch.cat((train_items, torch.tensor(self.interactions_df.iloc[user_id]['val_item_id'], dtype=torch.int64)))
+        probs = torch.zeros(self.num_items, dtype=torch.float64).index_add(0, all_positives, torch.ones(all_positives.shape[0], dtype=torch.float64))
+        probs = 1 - probs
+        probs /= torch.mean(probs)
+        negatives = torch.multinomial(probs, num_samples=self.num_negatives)
+
+        return (
+            torch.zeros(self.num_items, dtype=torch.float64).index_add(0, inds, torch.ones(inds.shape[0], dtype=torch.float64)),
+        ), (torch.cat(torch.tensor([pos_item]), negatives), user_id)
+    
+
+class EvalSequentialUserItemWithNegativesDataset(EvalSequentialDataset):
+    def __init__(self, interactions_df, *args, num_negatives=1, **kwargs):
+        self.items_interactions_df = interactions_df.groupby(by='item_id').agg({'user_id': list})
+        super().__init__(interactions_df, *args, **kwargs)
+        self.num_negatives = num_negatives
+
+    def __getitem__(self, index):
+        user_id = torch.searchsorted(self.lens_cumsum, index, right=True).item()
+        val_ind = self.lens[user_id] - (self.lens_cumsum[user_id] - index)
+        train_items = torch.tensor(self.interactions_df.iloc[user_id]['train_item_id'], dtype=torch.int64)
+        val_items = torch.tensor(self.interactions_df.iloc[user_id]['val_item_id'][:val_ind], dtype=torch.int64)
+        inds = torch.cat((train_items, val_items))
+        pos_item = self.interactions_df.iloc[user_id]['val_item_id'][val_ind]
+
+        all_positives = torch.cat((train_items, torch.tensor(self.interactions_df.iloc[user_id]['val_item_id'], dtype=torch.int64)))
+        probs = torch.zeros(self.num_items, dtype=torch.float64).index_add(0, all_positives, torch.ones(all_positives.shape[0], dtype=torch.float64))
+        probs = 1 - probs
+        probs /= torch.mean(probs)
+        negatives = torch.multinomial(probs, num_samples=self.num_negatives)
+
+        items_interactions = torch.zeros((self.num_negatives + 1, self.num_users), dtype=torch.float64)
+
+        for i, item_id in enumerate([pos_item, *negatives.tolist()]):
+            user_inds = torch.tensor(self.items_interactions_df.loc[item_id, 'user_id'], dtype=torch.int64)
+            items_interactions[i] = torch.zeros(self.num_users, dtype=torch.float64).index_add(0, user_inds, torch.ones(user_inds.shape[0], dtype=torch.float64))
+
+        return (
+            torch.zeros(self.num_items, dtype=torch.float64).index_add(0, inds, torch.ones(inds.shape[0], dtype=torch.float64)), 
+            items_interactions
+        ), (torch.cat((torch.tensor([pos_item]), negatives)), user_id)
+
 
 class TreeDataset(Dataset):
     def __init__(self, items_sims, num_interactions, num_negatives):
@@ -259,11 +366,12 @@ class SimilarityDataset(Dataset):
 str2dataset = {
     "bag_of_items": BagOfItemsDataset,
     "sequential": SequentialDataset,
+    "true_pairwise_ltr": UserItemWithNegativesDataset,
     "tree": TreeDataset,
     "similarity": SimilarityDataset
 }
 
-def get_data(data_dir: str, data_name: str, dataset_type: str, embedding_dataset_type: str = None, embedding_num_negatives: int = None, seed: int = 42, return_df=False):
+def get_data(data_dir: str, data_name: str, dataset_type: str, num_negatives: int = 0, embedding_dataset_type: str = None, embedding_num_negatives: int = None, seed: int = 42, return_df=False):
     if data_name == 'ml1m':
         interactions_data = pd.read_csv(os.path.join(data_dir, data_name, 'ratings.dat'), names=['userId', 'itemId', 'rating', 'timestamp'], delimiter='::', engine='python')
         interactions_data = interactions_data.rename(columns={'userId': 'user_id', 'itemId': 'item_id'})
@@ -277,8 +385,6 @@ def get_data(data_dir: str, data_name: str, dataset_type: str, embedding_dataset
         test_separator = np.quantile(timestamps, 0.95, method='lower')
 
         unique_items = pd.unique(interactions_data[interactions_data['timestamp'] < val_separator]['item_id'])
-        # old_items = item_data[pd.to_numeric(item_data['Title'].str.slice(-5, -1)) < 1990]['item_id']
-        # unique_items = pd.Series(list(set(unique_items) & set(old_items)))
         item2idx = {item_id: i for i, item_id in enumerate(unique_items)}
 
         item_data = item_data[item_data['item_id'].isin(unique_items)]
@@ -292,11 +398,21 @@ def get_data(data_dir: str, data_name: str, dataset_type: str, embedding_dataset
 
         interactions_data.loc[:, 'user_id'] = interactions_data['user_id'].apply(lambda x: user2idx[x])
 
-        train_dataset = str2dataset[dataset_type](copy(interactions_data[interactions_data['timestamp'] < val_separator]), item_data, seed=seed)
-        train_val_dataset = str2dataset[dataset_type](copy(interactions_data[interactions_data['timestamp'] < test_separator]), item_data, seed=seed)
+        if dataset_type != "true_pairwise_ltr":
+            train_dataset = str2dataset[dataset_type](copy(interactions_data[interactions_data['timestamp'] < val_separator]), item_data, seed=seed)
+            train_val_dataset = str2dataset[dataset_type](copy(interactions_data[interactions_data['timestamp'] < test_separator]), item_data, seed=seed)
+        else:
+            train_dataset = str2dataset[dataset_type](copy(interactions_data[interactions_data['timestamp'] < val_separator]), item_data, num_negatives=num_negatives, seed=seed)
+            train_val_dataset = str2dataset[dataset_type](copy(interactions_data[interactions_data['timestamp'] < test_separator]), item_data, num_negatives=num_negatives, seed=seed)
 
-        val_dataset = EvalSequentialDataset(copy(interactions_data[interactions_data['timestamp'] < test_separator]), item_data, val_separator, seed=seed)
-        test_dataset = EvalSequentialDataset(copy(interactions_data), item_data, test_separator, seed=seed)
+        val_data = copy(interactions_data[interactions_data['timestamp'] < test_separator])
+
+        if num_negatives == 0:
+            val_dataset = EvalSequentialDataset(val_data, item_data, val_separator, seed=seed)
+            test_dataset = EvalSequentialDataset(copy(interactions_data), item_data, test_separator, seed=seed)
+        else:
+            val_dataset = EvalSequentialUserItemWithNegativesDataset(val_data, item_data, val_separator, num_negatives=num_negatives, seed=seed)
+            test_dataset = EvalSequentialUserItemWithNegativesDataset(copy(interactions_data), item_data, test_separator, num_negatives=num_negatives, seed=seed)
 
         train_interactions = interactions_data[interactions_data['timestamp'] < val_separator]
         val_interactions = interactions_data[(interactions_data['timestamp'] < test_separator) & (interactions_data['timestamp'] >= val_separator)]
