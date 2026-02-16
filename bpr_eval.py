@@ -11,7 +11,7 @@ import numpy as np
 
 def main(args):
     criterion = nn.CrossEntropyLoss(reduction="mean")
-    train_dataset, train_val_dataset, val_dataset, test_dataset, train_interactions, train_val_interactions = get_data(args.data_dir, args.data_name, num_negatives=(19, 19), dataset_type="bag_of_items", return_df=True)
+    train_dataset, train_val_dataset, val_dataset, test_dataset, train_interactions, train_val_interactions = get_data(args.data_dir, args.data_name, num_negatives=(19, 19), dataset_type="bag_of_items_negatives", return_df=True)
     train_loader, train_val_loader, val_loader, test_loader = get_loaders(
         train_dataset, train_val_dataset, val_dataset, test_dataset, 32, 1,
     )
