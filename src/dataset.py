@@ -74,15 +74,7 @@ class UserItemWithNegativesDataset(Dataset):
 
         probs = torch.ones_like(user_interactions) - user_interactions
         probs /= torch.mean(probs)
-        neg_item_id = torch.zeros((self.num_negatives, ), dtype=torch.int64)
-        for i in range(self.num_negatives):
-            v = -1
-            while v == -1 or user_interactions[v] == 1:
-                v = torch.randint(self.num_items, size=(1,))
-            user_interactions[v] = 1
-            neg_item_id[i] = v
-        user_interactions[neg_item_id] -= 1
-        # neg_item_id = torch.multinomial(probs, num_samples=self.num_negatives)
+        neg_item_id = torch.multinomial(probs, num_samples=self.num_negatives)
 
         # items_interactions = torch.zeros((self.num_negatives + 1, self.num_users), dtype=torch.float64)
         # user_inds = torch.tensor(self.items_interactions_df.loc[[pos_item_id, *neg_item_id.tolist()], 'user_id'], dtype=torch.int64)
@@ -193,6 +185,11 @@ class EvalSequentialWithNegativesDataset(EvalSequentialDataset):
 class EvalSequentialUserItemWithNegativesDataset(EvalSequentialDataset):
     def __init__(self, interactions_df, *args, num_negatives=1, **kwargs):
         self.items_interactions_df = interactions_df.groupby(by='item_id').agg({'user_id': list})
+        self.interactions = torch.sparse_coo_tensor(
+            np.stack((interactions_df['user_id'].values, interactions_df['item_id'].values), axis=0),
+            torch.ones(interactions_df.shape[0], dtype=torch.float64),
+            (self.num_users, self.num_items)
+        ).to_dense()
         super().__init__(interactions_df, *args, **kwargs)
         self.num_negatives = num_negatives
 
@@ -210,11 +207,7 @@ class EvalSequentialUserItemWithNegativesDataset(EvalSequentialDataset):
         probs /= torch.mean(probs)
         negatives = torch.multinomial(probs, num_samples=self.num_negatives)
 
-        items_interactions = torch.zeros((self.num_negatives + 1, self.num_users), dtype=torch.float64)
-
-        for i, item_id in enumerate([pos_item, *negatives.tolist()]):
-            user_inds = torch.tensor(self.items_interactions_df.loc[item_id, 'user_id'], dtype=torch.int64)
-            items_interactions[i] = torch.zeros(self.num_users, dtype=torch.float64).index_add(0, user_inds, torch.ones(user_inds.shape[0], dtype=torch.float64))
+        items_interactions = self.interactions[:, torch.cat((torch.tensor([pos_item]), negatives))].T
 
         return (
             torch.zeros(self.num_items, dtype=torch.float64).index_add(0, inds, torch.ones(inds.shape[0], dtype=torch.float64)), 
