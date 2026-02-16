@@ -166,7 +166,7 @@ class ManifoldTruePairwiseLTR(nn.Module):
         self.model = nn.Sequential(
             nn.Linear(1, emb_dim, dtype=dtype),
             *[
-                nn.Linear(1, emb_dim, dtype=dtype)
+                nn.Linear(emb_dim, emb_dim, dtype=dtype)
                 for _ in range(num_layers)
             ],
         )
