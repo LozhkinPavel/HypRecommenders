@@ -42,7 +42,7 @@ def main(
             name=run_name
         )
     print('Prepare data')
-    _, train_val_loader, val_loader, test_loader = get_loaders(*get_data(data_dir, data_name, "true_pairwise_ltr", num_negatives=max(ks)), batch_size, num_workers)
+    _, train_val_loader, val_loader, test_loader = get_loaders(*get_data(data_dir, data_name, "true_pairwise_ltr", num_negatives=(num_negatives, max(ks) - 1)), batch_size, num_workers)
     num_items = test_loader.dataset.num_items
     num_users = test_loader.dataset.num_users
 

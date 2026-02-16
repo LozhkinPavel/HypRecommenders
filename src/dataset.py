@@ -371,7 +371,7 @@ str2dataset = {
     "similarity": SimilarityDataset
 }
 
-def get_data(data_dir: str, data_name: str, dataset_type: str, num_negatives: int = 0, embedding_dataset_type: str = None, embedding_num_negatives: int = None, seed: int = 42, return_df=False):
+def get_data(data_dir: str, data_name: str, dataset_type: str, num_negatives: tuple = (), embedding_dataset_type: str = None, embedding_num_negatives: int = None, seed: int = 42, return_df=False):
     if data_name == 'ml1m':
         interactions_data = pd.read_csv(os.path.join(data_dir, data_name, 'ratings.dat'), names=['userId', 'itemId', 'rating', 'timestamp'], delimiter='::', engine='python')
         interactions_data = interactions_data.rename(columns={'userId': 'user_id', 'itemId': 'item_id'})
@@ -402,17 +402,17 @@ def get_data(data_dir: str, data_name: str, dataset_type: str, num_negatives: in
             train_dataset = str2dataset[dataset_type](copy(interactions_data[interactions_data['timestamp'] < val_separator]), item_data, seed=seed)
             train_val_dataset = str2dataset[dataset_type](copy(interactions_data[interactions_data['timestamp'] < test_separator]), item_data, seed=seed)
         else:
-            train_dataset = str2dataset[dataset_type](copy(interactions_data[interactions_data['timestamp'] < val_separator]), item_data, num_negatives=num_negatives, seed=seed)
-            train_val_dataset = str2dataset[dataset_type](copy(interactions_data[interactions_data['timestamp'] < test_separator]), item_data, num_negatives=num_negatives, seed=seed)
+            train_dataset = str2dataset[dataset_type](copy(interactions_data[interactions_data['timestamp'] < val_separator]), item_data, num_negatives=num_negatives[0], seed=seed)
+            train_val_dataset = str2dataset[dataset_type](copy(interactions_data[interactions_data['timestamp'] < test_separator]), item_data, num_negatives=num_negatives[0], seed=seed)
 
         val_data = copy(interactions_data[interactions_data['timestamp'] < test_separator])
 
-        if num_negatives == 0:
+        if len(num_negatives) == 0:
             val_dataset = EvalSequentialDataset(val_data, item_data, val_separator, seed=seed)
             test_dataset = EvalSequentialDataset(copy(interactions_data), item_data, test_separator, seed=seed)
         else:
-            val_dataset = EvalSequentialUserItemWithNegativesDataset(val_data, item_data, val_separator, num_negatives=num_negatives, seed=seed)
-            test_dataset = EvalSequentialUserItemWithNegativesDataset(copy(interactions_data), item_data, test_separator, num_negatives=num_negatives, seed=seed)
+            val_dataset = EvalSequentialUserItemWithNegativesDataset(val_data, item_data, val_separator, num_negatives=num_negatives[1], seed=seed)
+            test_dataset = EvalSequentialUserItemWithNegativesDataset(copy(interactions_data), item_data, test_separator, num_negatives=num_negatives[1], seed=seed)
 
         train_interactions = interactions_data[interactions_data['timestamp'] < val_separator]
         val_interactions = interactions_data[(interactions_data['timestamp'] < test_separator) & (interactions_data['timestamp'] >= val_separator)]
