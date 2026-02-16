@@ -156,6 +156,64 @@ class TruePairwiseLTR(nn.Module):
         output = torch.squeeze(self.model(input), -1)
         logits = output - torch.transpose(output, 1, 2)
         return torch.sum(1 / torch.exp(-logits), dim=2)
+    
+
+class ManifoldTruePairwiseLTR(nn.Module):
+    def __init__(self, emb_dim, manifold, num_items, num_layers=0, dtype=torch.float32):
+        super().__init__()
+        self.num_items = num_items
+        self.emb_dim = emb_dim
+        self.model = nn.Sequential(
+            nn.Linear(num_items, num_items * emb_dim, dtype=dtype),
+            *[
+                nn.Linear(num_items * emb_dim, num_items * emb_dim, dtype=dtype)
+                for _ in range(num_layers)
+            ],
+        )
+        self.map = ExpMap0(manifold)
+        self.manifold = manifold
+        self.head = nn.Linear(2 * emb_dim, 1, dtype=dtype) if isinstance(manifold, geoopt.Euclidean) else UnidirectionalPoincareMLR(2 * emb_dim, 1, manifold, dtype=dtype)
+    
+    def forward(self, batch):
+        users_interactions, items = batch
+        item_logits = self.map(self.model(users_interactions).view(-1, self.num_items, self.emb_dim))
+        
+        arange = torch.arange(items.shape[0], device=self.device)
+        pos_item = item_logits[arange, items[arange, 0]]
+        neg_items = item_logits[arange[None], items[:, 1:]]
+        num_items = neg_items.shape[1]
+        input1 = torch.cat((
+                pos_item[:, None].expand(-1, num_items, -1),
+                neg_items
+            ), 
+            dim=1
+        )
+        input2 = torch.cat((
+                neg_items,
+                pos_item[:, None].expand(-1, num_items, -1),
+            ), 
+            dim=1
+        )
+        return torch.squeeze(self.head(input1) - self.head(input2), dim=-1)
+    
+    def inference(self, batch, items, user_id):
+        users_interactions = batch[0]
+        item_logits = self.map(self.model(users_interactions).view(-1, self.num_items, self.emb_dim))
+        num_items = items.shape[1]
+
+        arange = torch.arange(items.shape[0], device=self.device)
+        cur_items = item_logits[arange[None], items[:, :]]
+
+        input = torch.cat((
+                cur_items[:, :, None].expand(-1, -1, num_items, -1), 
+                cur_items[:, None].expand(-1, num_items, -1, -1)
+            ),
+            dim=3
+        )
+        output = torch.squeeze(self.head(input), -1)
+        logits = output - torch.transpose(output, 1, 2)
+        return torch.sum(1 / torch.exp(-logits), dim=2)
+    
 
 class MobiusLinear(nn.Module):
     def __init__(

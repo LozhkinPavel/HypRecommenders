@@ -34,18 +34,6 @@ class BagOfItemsDataset(Dataset):
     def __len__(self):
         return self.interactions_df.shape[0]
     
-class BagOfItemsWithNegativesDataset(BagOfItemsDataset):
-    def __init__(self, *args, num_negatives=1, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.num_negatives = num_negatives
-    
-    def __getitem__(self, index):
-        inds = torch.tensor(self.interactions_df.iloc[index]['item_id'])
-        interactions = torch.zeros(self.num_items, dtype=torch.float64).index_add(0, inds, torch.ones(inds.shape[0], dtype=torch.float64))
-        probs = torch.ones_like(interactions) - interactions
-        probs /= torch.mean(probs)
-        return interactions, torch.multinomial(probs, num_samples=self.num_negatives)
-    
 class UserItemWithNegativesDataset(Dataset):
     def __init__(self, interactions_df: pd.DataFrame, item_df: pd.DataFrame, num_negatives: int = 1, shuffle: bool = True, seed: int = 42):
         super().__init__()
@@ -85,6 +73,23 @@ class UserItemWithNegativesDataset(Dataset):
 
     def __len__(self):
         return self.interactions_df.shape[0]
+    
+
+class BagOfItemsWithNegativesDataset(UserItemWithNegativesDataset):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+    
+    def __getitem__(self, index):
+        pos_item_id, user_id = self.interactions_df.iloc[index]['item_id'], self.interactions_df.iloc[index]['user_id']
+        
+        item_inds = torch.tensor(self.users_interactions_df.loc[user_id, 'item_id'], dtype=torch.int64)
+        user_interactions = torch.zeros(self.num_items, dtype=torch.float64).index_add(0, item_inds, torch.ones(item_inds.shape[0], dtype=torch.float64))
+
+        probs = torch.ones_like(user_interactions) - user_interactions
+        probs /= torch.mean(probs)
+        neg_item_id = torch.multinomial(probs, num_samples=self.num_negatives)
+
+        return (user_interactions, torch.tensor([pos_item_id]), neg_item_id), ()
 
 
 class SequentialDataset(Dataset):
@@ -369,6 +374,7 @@ class SimilarityDataset(Dataset):
 
 str2dataset = {
     "bag_of_items": BagOfItemsDataset,
+    "bag_of_items_negatives": BagOfItemsWithNegativesDataset,
     "sequential": SequentialDataset,
     "true_pairwise_ltr": UserItemWithNegativesDataset,
     "tree": TreeDataset,
@@ -402,7 +408,7 @@ def get_data(data_dir: str, data_name: str, dataset_type: str, num_negatives: tu
 
         interactions_data.loc[:, 'user_id'] = interactions_data['user_id'].apply(lambda x: user2idx[x])
 
-        if dataset_type != "true_pairwise_ltr":
+        if num_negatives is None or num_negatives[0] == 0:
             train_dataset = str2dataset[dataset_type](copy(interactions_data[interactions_data['timestamp'] < val_separator]), item_data, seed=seed)
             train_val_dataset = str2dataset[dataset_type](copy(interactions_data[interactions_data['timestamp'] < test_separator]), item_data, seed=seed)
         else:
