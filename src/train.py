@@ -164,8 +164,8 @@ def eval_epoch_with_negatives(
         users_freqs.index_add_(0, user_id, torch.ones((user_id.shape[0]), device=device))
 
         for i, k in enumerate(ks):
-            hr_sum[i].index_add_(0, user_id, hr(topk_inds, k, torch.tensor([0])))
-            ndcg_sum[i].index_add_(0, user_id, ndcg(topk_inds, k, torch.tensor([0])))
+            hr_sum[i].index_add_(0, user_id, hr(topk_inds, k, torch.tensor([0], device=device)))
+            ndcg_sum[i].index_add_(0, user_id, ndcg(topk_inds, k, torch.tensor([0], device=device)))
 
             items_freqs[i, items[torch.arange(topk_inds.shape[0])[:, None], topk_inds[:, :k]]] = True
 
