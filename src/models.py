@@ -288,6 +288,8 @@ class ExpMap0(nn.Module):
         self.manifold = manifold
 
     def forward(self, x: torch.Tensor):
+        if isinstance(self.manifold, geoopt.Euclidean):
+            return x
         return self.manifold.expmap0(x)
 
 
