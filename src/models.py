@@ -69,7 +69,7 @@ class BPRWrapper(BayesianPersonalizedRanking):
         return permuted_scores
     
     def inference(self, batch, items, user_id):
-        output = torch.zeros_like(items)
+        output = torch.zeros_like(items, dtype=torch.float64)
         for i in range(user_id.shape[0]):
             item_ids, scores = self.recommend(
                 user_id[i], 
