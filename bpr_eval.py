@@ -49,7 +49,7 @@ def main(args):
         learning_rate=1e-3,
     )
     model.fit(train_matrix)
-    scores = eval_epoch(model, criterion, test_loader, "cpu", ks=[1, 5, 10, 20, 50, 100])
+    scores = eval_epoch_with_negatives(model, criterion, test_loader, "cpu", ks=[1, 5, 10, 20])
 
     print("Final scores:", scores)
     print("Val scores:", best_scores)
