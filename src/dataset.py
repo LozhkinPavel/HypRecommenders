@@ -89,7 +89,7 @@ class BagOfItemsWithNegativesDataset(UserItemWithNegativesDataset):
         probs /= torch.mean(probs)
         neg_item_id = torch.multinomial(probs, num_samples=self.num_negatives)
 
-        return (user_interactions, torch.tensor([pos_item_id]), neg_item_id), ()
+        return (user_interactions, torch.cat((torch.tensor([pos_item_id]), neg_item_id))), ()
 
 
 class SequentialDataset(Dataset):
