@@ -180,7 +180,7 @@ class ManifoldTruePairwiseLTR(nn.Module):
         
         arange = torch.arange(items.shape[0], device=items.device)
         pos_item = item_logits[arange, items[arange, 0]]
-        neg_items = item_logits[arange[None], items[:, 1:]]
+        neg_items = item_logits[arange[:, None], items[:, 1:]]
         num_items = neg_items.shape[1]
         input1 = torch.cat((
                 pos_item[:, None].expand(-1, num_items, -1),
@@ -202,7 +202,7 @@ class ManifoldTruePairwiseLTR(nn.Module):
         num_items = items.shape[1]
 
         arange = torch.arange(items.shape[0], device=items.device)
-        cur_items = item_logits[arange[None], items[:, :]]
+        cur_items = item_logits[arange[:, None], items[:, :]]
 
         input = torch.cat((
                 cur_items[:, :, None].expand(-1, -1, num_items, -1), 
