@@ -50,16 +50,18 @@ class UserItemWithNegativesDataset(Dataset):
     def __init__(self, interactions_df: pd.DataFrame, item_df: pd.DataFrame, num_negatives: int = 1, shuffle: bool = True, seed: int = 42):
         super().__init__()
         self.num_items = len(pd.unique(interactions_df['item_id']))
-        self.num_users = pd.unique(interactions_df['user_id']).max() + 1
+        self.num_users = interactions_df['user_id'].max() + 1
 
         self.item_df = item_df
         self.interactions_df = interactions_df
 
-        self.num_interactions = torch.zeros((self.num_items, ), dtype=torch.float64).index_add_(0, torch.tensor(interactions_df['item_id'].values), torch.ones(interactions_df.shape[0], dtype=torch.float64))
+        ones = torch.ones(interactions_df.shape[0], dtype=torch.float64)
+        self.num_interactions = torch.zeros((self.num_items, ), dtype=torch.float64).index_add_(0, torch.tensor(interactions_df['item_id'].values), ones)
 
         self.users_interactions_df = interactions_df.groupby(by='user_id').agg({'item_id': list})
         self.items_interactions_df = interactions_df.groupby(by='item_id').agg({'user_id': list})
-        self.interactions = torch.sparse_coo_tensor((torch.tensor(interactions_df['user_id']), torch.tensor(interactions_df['item_id'])), torch.ones(interactions_df.shape[0]), (self.num_users, self.num_items))
+        print(interactions_df)
+        self.interactions = torch.sparse_coo_tensor((torch.tensor(interactions_df['user_id']), torch.tensor(interactions_df['item_id'])), ones, (self.num_users, self.num_items))
         self.num_negatives = num_negatives
 
         if shuffle:
