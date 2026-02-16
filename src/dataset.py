@@ -185,6 +185,8 @@ class EvalSequentialWithNegativesDataset(EvalSequentialDataset):
 class EvalSequentialUserItemWithNegativesDataset(EvalSequentialDataset):
     def __init__(self, interactions_df, *args, num_negatives=1, **kwargs):
         self.items_interactions_df = interactions_df.groupby(by='item_id').agg({'user_id': list})
+        self.num_items = len(pd.unique(interactions_df['item_id']))
+        self.num_users = interactions_df['user_id'].max() + 1
         self.interactions = torch.sparse_coo_tensor(
             np.stack((interactions_df['user_id'].values, interactions_df['item_id'].values), axis=0),
             torch.ones(interactions_df.shape[0], dtype=torch.float64),
