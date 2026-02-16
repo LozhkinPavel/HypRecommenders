@@ -164,19 +164,30 @@ class ManifoldTruePairwiseLTR(nn.Module):
         self.num_items = num_items
         self.emb_dim = emb_dim
         self.model = nn.Sequential(
-            nn.Linear(1, emb_dim, dtype=dtype),
+            nn.Linear(num_items, emb_dim, dtype=dtype),
             *[
                 nn.Linear(emb_dim, emb_dim, dtype=dtype)
                 for _ in range(num_layers)
             ],
+            nn.Linear(emb_dim, num_items * emb_dim, dtype=dtype)
         )
         self.map = ExpMap0(manifold)
         self.manifold = manifold
-        self.head = nn.Linear(2 * emb_dim, 1, dtype=dtype) if isinstance(manifold, geoopt.Euclidean) else UnidirectionalPoincareMLR(2 * emb_dim, 1, manifold, dtype=dtype)
+        if isinstance(manifold, geoopt.PoincareBall):
+            self.head = UnidirectionalPoincareMLR(2 * emb_dim, 1, manifold, dtype=dtype)
+            self.concat_factor = 1.0 # beta(emb_dim, 1/2) / beta(emb_dim / 2, 1/2)
+            for i in range(emb_dim // 2 + 1, emb_dim + 1):
+                self.concat_factor *= i**2
+            for i in range(2 * emb_dim, emb_dim, -1):
+                self.concat_factor /= i
+            self.concat_factor *= 2 ** (emb_dim - 1)
+        else:
+            self.head = nn.Linear(2 * emb_dim, 1, dtype=dtype)
+            self.concat_factor = 1.0
     
     def forward(self, batch):
         users_interactions, items = batch
-        item_logits = self.map(self.model(users_interactions[..., None]))
+        item_logits = self.map(self.concat_factor * self.model(users_interactions).view(-1, self.num_items, self.emb_dim))
         
         arange = torch.arange(items.shape[0], device=items.device)
         pos_item = item_logits[arange, items[arange, 0]]
@@ -198,7 +209,7 @@ class ManifoldTruePairwiseLTR(nn.Module):
     
     def inference(self, batch, items, user_id):
         users_interactions = batch[0]
-        item_logits = self.map(self.model(users_interactions[..., None]))
+        item_logits = self.map(self.concat_factor * self.model(users_interactions).view(-1, self.num_items, self.emb_dim))
         num_items = items.shape[1]
 
         arange = torch.arange(items.shape[0], device=items.device)
