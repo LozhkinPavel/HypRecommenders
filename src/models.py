@@ -164,9 +164,9 @@ class ManifoldTruePairwiseLTR(nn.Module):
         self.num_items = num_items
         self.emb_dim = emb_dim
         self.model = nn.Sequential(
-            nn.Linear(num_items, num_items * emb_dim, dtype=dtype),
+            nn.Linear(1, emb_dim, dtype=dtype),
             *[
-                nn.Linear(num_items * emb_dim, num_items * emb_dim, dtype=dtype)
+                nn.Linear(1, emb_dim, dtype=dtype)
                 for _ in range(num_layers)
             ],
         )
@@ -176,7 +176,7 @@ class ManifoldTruePairwiseLTR(nn.Module):
     
     def forward(self, batch):
         users_interactions, items = batch
-        item_logits = self.map(self.model(users_interactions).view(-1, self.num_items, self.emb_dim))
+        item_logits = self.map(self.model(users_interactions[..., None]))
         
         arange = torch.arange(items.shape[0], device=items.device)
         pos_item = item_logits[arange, items[arange, 0]]
@@ -198,7 +198,7 @@ class ManifoldTruePairwiseLTR(nn.Module):
     
     def inference(self, batch, items, user_id):
         users_interactions = batch[0]
-        item_logits = self.map(self.model(users_interactions).view(-1, self.num_items, self.emb_dim))
+        item_logits = self.map(self.model(users_interactions[..., None]))
         num_items = items.shape[1]
 
         arange = torch.arange(items.shape[0], device=items.device)
