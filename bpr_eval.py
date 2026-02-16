@@ -22,10 +22,10 @@ def main(args):
     num_items = len(pd.unique(train_interactions['item_id']))
     train_matrix = coo_array((np.ones((train_interactions.shape[0],)), (train_interactions['user_id'], train_interactions['item_id'])), shape=(num_users, num_items)).tocsr()
 
-    for emb_dim in tqdm([8, 16, 32, 64, 128]):
-        for lam in [1e-4, 1e-3, 1e-2, 1e-1]:
+    for emb_dim in tqdm([16, 32, 64, 128]):
+        for lam in [1e-3, 1e-2, 1e-1]:
             model = BPRWrapper(
-                iterations=100,
+                iterations=500,
                 factors=emb_dim,
                 regularization=lam,
                 learning_rate=1e-3,
