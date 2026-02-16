@@ -50,7 +50,7 @@ def main(
 
     dtype = getattr(torch, dtype)
 
-    model = TruePairwiseLTR(emb_dim, num_users, num_items, 1, dtype=dtype)
+    model = TruePairwiseLTR(emb_dim, num_users, num_items, 1, dtype=dtype).to(device)
 
     optimizer = Adam(model.parameters(), lr, weight_decay=1e-3)
     criterion = TruePairwiseLTRLoss(reduction='mean').to(device)
