@@ -178,7 +178,7 @@ class ManifoldTruePairwiseLTR(nn.Module):
         users_interactions, items = batch
         item_logits = self.map(self.model(users_interactions).view(-1, self.num_items, self.emb_dim))
         
-        arange = torch.arange(items.shape[0], device=self.device)
+        arange = torch.arange(items.shape[0], device=items.device)
         pos_item = item_logits[arange, items[arange, 0]]
         neg_items = item_logits[arange[None], items[:, 1:]]
         num_items = neg_items.shape[1]
@@ -201,7 +201,7 @@ class ManifoldTruePairwiseLTR(nn.Module):
         item_logits = self.map(self.model(users_interactions).view(-1, self.num_items, self.emb_dim))
         num_items = items.shape[1]
 
-        arange = torch.arange(items.shape[0], device=self.device)
+        arange = torch.arange(items.shape[0], device=items.device)
         cur_items = item_logits[arange[None], items[:, :]]
 
         input = torch.cat((
