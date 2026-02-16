@@ -59,6 +59,7 @@ class UserItemWithNegativesDataset(Dataset):
 
         self.users_interactions_df = interactions_df.groupby(by='user_id').agg({'item_id': list})
         self.items_interactions_df = interactions_df.groupby(by='item_id').agg({'user_id': list})
+        self.interactions = torch.sparse_coo_tensor((torch.tensor(interactions_df['user_id']), torch.tensor(interactions_df['item_id'])), torch.ones(interactions_df.shape[0]), (self.num_users, self.num_items))
         self.num_negatives = num_negatives
 
         if shuffle:
@@ -74,11 +75,10 @@ class UserItemWithNegativesDataset(Dataset):
         probs /= torch.mean(probs)
         neg_item_id = torch.multinomial(probs, num_samples=self.num_negatives)
 
-        items_interactions = torch.zeros((self.num_negatives + 1, self.num_users), dtype=torch.float64)
-
-        for i, item_id in enumerate([pos_item_id, *neg_item_id.tolist()]):
-            user_inds = torch.tensor(self.items_interactions_df.loc[item_id, 'user_id'], dtype=torch.int64)
-            items_interactions[i] = torch.zeros(self.num_users, dtype=torch.float64).index_add(0, user_inds, torch.ones(user_inds.shape[0], dtype=torch.float64))
+        # items_interactions = torch.zeros((self.num_negatives + 1, self.num_users), dtype=torch.float64)
+        # user_inds = torch.tensor(self.items_interactions_df.loc[[pos_item_id, *neg_item_id.tolist()], 'user_id'], dtype=torch.int64)
+        # items_interactions.index_add(1, user_inds, torch.ones(user_inds.shape[0], dtype=torch.float64))
+        items_interactions = self.interactions[:, torch.tensor([pos_item_id, *neg_item_id.tolist()])].to_dense()
 
         return (user_interactions, items_interactions), ()
 
