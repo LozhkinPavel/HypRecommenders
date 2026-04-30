@@ -80,22 +80,22 @@ def eval_epoch(
         data_loader = tqdm(data_loader, desc="Eval")
 
     for batch, (pos_item, user_id) in data_loader:
-        assert torch.all(batch <= 1)
+        # assert torch.all(batch <= 1)
         batch, pos_item, user_id = (
-            batch.to(device),
+            tuple_to_device(batch, device),
             pos_item.to(device),
             user_id.to(device),
         )
         with torch.no_grad():
-            preds = model(batch)
+            preds = model.inference(batch, user_id)
         assert torch.all(~torch.isnan(preds))
         logits = preds * temperature
         # loss = criterion(logits, pos_item)
 
-        logits[batch == 1] = -torch.inf
+        logits[batch[0] == 1] = -torch.inf
         _, topk_inds = torch.topk(logits, k=max(ks), dim=1, sorted=True)
 
-        users_freqs.index_add_(0, user_id, torch.ones((batch.shape[0]), device=device))
+        users_freqs.index_add_(0, user_id, torch.ones((user_id.shape[0]), device=device))
 
         for i, k in enumerate(ks):
             hr_sum[i].index_add_(0, user_id, hr(topk_inds, k, pos_item))

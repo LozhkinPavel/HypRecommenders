@@ -157,7 +157,9 @@ class EvalSequentialDataset(Dataset):
         val_items = torch.tensor(self.interactions_df.iloc[user_id]['val_item_id'][:val_ind], dtype=torch.int64)
         inds = torch.cat((train_items, val_items))
         pos_item = self.interactions_df.iloc[user_id]['val_item_id'][val_ind]
-        return torch.zeros(self.num_items, dtype=torch.float64).index_add(0, inds, torch.ones(inds.shape[0], dtype=torch.float64)), pos_item, self.interactions_df.iloc[user_id]['user_id']
+        return (
+            torch.zeros(self.num_items, dtype=torch.float64).index_add(0, inds, torch.ones(inds.shape[0], dtype=torch.float64)), 
+        ), (pos_item, self.interactions_df.iloc[user_id]['user_id'])
     
     def __len__(self):
         return self.lens_cumsum[-1]
@@ -381,7 +383,7 @@ str2dataset = {
     "similarity": SimilarityDataset
 }
 
-def get_data(data_dir: str, data_name: str, dataset_type: str, num_negatives: tuple = (), embedding_dataset_type: str = None, embedding_num_negatives: int = None, seed: int = 42, return_df=False):
+def get_data(data_dir: str, data_name: str, dataset_type: str, num_negatives: tuple = None, embedding_dataset_type: str = None, embedding_num_negatives: int = None, seed: int = 42, return_df=False):
     if data_name == 'ml1m':
         interactions_data = pd.read_csv(os.path.join(data_dir, data_name, 'ratings.dat'), names=['userId', 'itemId', 'rating', 'timestamp'], delimiter='::', engine='python')
         interactions_data = interactions_data.rename(columns={'userId': 'user_id', 'itemId': 'item_id'})
@@ -417,7 +419,7 @@ def get_data(data_dir: str, data_name: str, dataset_type: str, num_negatives: tu
 
         val_data = copy(interactions_data[interactions_data['timestamp'] < test_separator])
 
-        if len(num_negatives) == 0:
+        if num_negatives is None:
             val_dataset = EvalSequentialDataset(val_data, item_data, val_separator, seed=seed)
             test_dataset = EvalSequentialDataset(copy(interactions_data), item_data, test_separator, seed=seed)
         else:
